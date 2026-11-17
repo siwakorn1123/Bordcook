@@ -1,0 +1,35 @@
+{
+  "expo": {
+    "name": "สมุดคอร์ด",
+    "slug": "chord-book",
+    "version": "1.0.0",
+    "orientation": "default",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "backgroundColor": "#101318"
+    },
+    "android": {
+      "package": "com.chordbook.tablet",
+      "adaptiveIcon": {
+        "backgroundColor": "#1D5D9B"
+      },
+      "permissions": [
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_EXTERNAL_STORAGE"
+      ]
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.chordbook.tablet"
+    },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "อนุญาตให้แอปสมุดคอร์ดเข้าถึงรูปภาพเพื่อเลือกรูปคอร์ดเพลง"
+        }
+      ],
+      "expo-sqlite"
+    ]
+  }
+}
