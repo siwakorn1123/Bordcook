@@ -22,6 +22,7 @@ import {
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
+import { PWAInstallButton } from './components/PWAInstallButton';
 import {
   deleteSongRecord,
   getAllSongs,
@@ -88,7 +89,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-[#F6F7FA] text-slate-900 dark:bg-[#101318] dark:text-slate-100">
       <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur-md dark:border-slate-800 dark:bg-[#171B22]/95">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-8 px-4 py-3 sm:px-6">
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
           <button
             type="button"
             onClick={() => setScreen({ type: 'list' })}
@@ -97,14 +98,17 @@ export default function App() {
             สมุดคอร์ด
           </button>
 
-          <button
-            type="button"
-            onClick={() => setDarkMode((prev) => !prev)}
-            aria-label={darkMode ? 'สลับเป็นโหมดสว่าง' : 'สลับเป็นโหมดมืด'}
-            className="inline-flex min-h-[40px] min-w-[40px] shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
-          >
-            {darkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <PWAInstallButton />
+            <button
+              type="button"
+              onClick={() => setDarkMode((prev) => !prev)}
+              aria-label={darkMode ? 'สลับเป็นโหมดสว่าง' : 'สลับเป็นโหมดมืด'}
+              className="inline-flex min-h-[40px] min-w-[40px] shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+            >
+              {darkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            </button>
+          </div>
         </div>
       </header>
 
