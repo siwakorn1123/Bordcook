@@ -1,0 +1,6 @@
+{
+  "name": "สมุดคอร์ด",
+  "description": "แอป Flutter สำหรับแท็บเล็ต Android ใช้เก็บและเปิดดูรูปคอร์ดเพลง",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
