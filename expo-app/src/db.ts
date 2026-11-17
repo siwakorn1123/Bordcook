@@ -8,6 +8,19 @@ export interface Song {
   pageFiles: string[];
 }
 
+export interface Setlist {
+  id: number;
+  name: string;
+  createdAt: number;
+}
+
+export interface SetlistItem {
+  itemId: number;
+  setlistId: number;
+  position: number;
+  song: Song;
+}
+
 interface SongRow {
   id: number;
   name: string;
@@ -18,6 +31,19 @@ interface PageRow {
   id: number;
   song_id: number;
   file: string;
+  position: number;
+}
+
+interface SetlistRow {
+  id: number;
+  name: string;
+  created_at: number;
+}
+
+interface SetlistItemRow {
+  item_id: number;
+  setlist_id: number;
+  song_id: number;
   position: number;
 }
 
@@ -67,9 +93,24 @@ class ChordDb {
         FOREIGN KEY (song_id) REFERENCES songs (id) ON DELETE CASCADE
       );
       CREATE INDEX IF NOT EXISTS idx_pages_song_pos ON pages (song_id, position);
+      CREATE TABLE IF NOT EXISTS setlists (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS setlist_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        setlist_id INTEGER NOT NULL,
+        song_id INTEGER NOT NULL,
+        position INTEGER NOT NULL,
+        FOREIGN KEY (setlist_id) REFERENCES setlists (id) ON DELETE CASCADE,
+        FOREIGN KEY (song_id) REFERENCES songs (id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_setlist_items_order ON setlist_items (setlist_id, position);
     `);
 
     this.db = db;
+    await this.ensureDefaultSetlist();
   }
 
   getImageUri(fileName: string): string {
@@ -238,6 +279,130 @@ class ChordDb {
     for (const row of prevPages) {
       await this.deleteFileIfUnused(row.file);
     }
+  }
+
+  private async ensureDefaultSetlist(): Promise<void> {
+    const countRow = await this.database.getFirstAsync<{ cnt: number }>(
+      'SELECT COUNT(*) AS cnt FROM setlists'
+    );
+    if ((countRow?.cnt ?? 0) === 0) {
+      await this.database.runAsync(
+        'INSERT INTO setlists (name, created_at) VALUES (?, ?)',
+        ['ลิสเพลงของฉัน', Date.now()]
+      );
+    }
+  }
+
+  async getSetlists(): Promise<Setlist[]> {
+    await this.ensureDefaultSetlist();
+    const rows = await this.database.getAllAsync<SetlistRow>(
+      'SELECT id, name, created_at FROM setlists ORDER BY id ASC'
+    );
+    return rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      createdAt: r.created_at,
+    }));
+  }
+
+  async createSetlist(name: string): Promise<number> {
+    const clean = name.trim();
+    if (!clean) throw new Error('กรุณากรอกชื่อลิสเพลง');
+    const res = await this.database.runAsync(
+      'INSERT INTO setlists (name, created_at) VALUES (?, ?)',
+      [clean, Date.now()]
+    );
+    return res.lastInsertRowId;
+  }
+
+  async renameSetlist(id: number, name: string): Promise<void> {
+    const clean = name.trim();
+    if (!clean) throw new Error('กรุณากรอกชื่อลิสเพลง');
+    await this.database.runAsync('UPDATE setlists SET name = ? WHERE id = ?', [
+      clean,
+      id,
+    ]);
+  }
+
+  async deleteSetlist(id: number): Promise<void> {
+    await this.database.runAsync('DELETE FROM setlists WHERE id = ?', [id]);
+    await this.ensureDefaultSetlist();
+  }
+
+  async getSetlistItems(setlistId: number): Promise<SetlistItem[]> {
+    const db = this.database;
+    const itemRows = await db.getAllAsync<SetlistItemRow>(
+      'SELECT id AS item_id, setlist_id, song_id, position FROM setlist_items WHERE setlist_id = ? ORDER BY position ASC, id ASC',
+      [setlistId]
+    );
+    if (itemRows.length === 0) return [];
+
+    const songs = await this.getSongs();
+    const songMap = new Map<number, Song>();
+    for (const song of songs) {
+      songMap.set(song.id, song);
+    }
+
+    const result: SetlistItem[] = [];
+    for (const row of itemRows) {
+      const song = songMap.get(row.song_id);
+      if (song) {
+        result.push({
+          itemId: row.item_id,
+          setlistId: row.setlist_id,
+          position: row.position,
+          song,
+        });
+      }
+    }
+    return result;
+  }
+
+  async addSongsToSetlist(setlistId: number, songIds: number[]): Promise<void> {
+    if (songIds.length === 0) return;
+    const db = this.database;
+
+    await db.withTransactionAsync(async () => {
+      const existing = await db.getAllAsync<{ song_id: number; position: number }>(
+        'SELECT song_id, position FROM setlist_items WHERE setlist_id = ? ORDER BY position ASC',
+        [setlistId]
+      );
+      const existingSongIds = new Set(existing.map((e) => e.song_id));
+      let nextPos =
+        existing.length > 0
+          ? existing[existing.length - 1].position + 1
+          : 0;
+
+      for (const songId of songIds) {
+        if (existingSongIds.has(songId)) continue;
+        existingSongIds.add(songId);
+        await db.runAsync(
+          'INSERT INTO setlist_items (setlist_id, song_id, position) VALUES (?, ?, ?)',
+          [setlistId, songId, nextPos++]
+        );
+      }
+    });
+  }
+
+  async reorderSetlistItems(
+    setlistId: number,
+    orderedItemIds: number[]
+  ): Promise<void> {
+    const db = this.database;
+    await db.withTransactionAsync(async () => {
+      for (let i = 0; i < orderedItemIds.length; i++) {
+        await db.runAsync(
+          'UPDATE setlist_items SET position = ? WHERE id = ? AND setlist_id = ?',
+          [i, orderedItemIds[i], setlistId]
+        );
+      }
+    });
+  }
+
+  async removeSetlistItem(itemId: number): Promise<void> {
+    await this.database.runAsync('DELETE FROM setlist_items WHERE id = ?', [
+      itemId,
+    ]);
   }
 
   private async deleteFileIfUnused(fileName: string): Promise<void> {

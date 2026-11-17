@@ -22,12 +22,20 @@ interface ViewerScreenProps {
   song: Song;
   onBack: () => void;
   onEdit: () => void;
+  setlistTotal?: number;
+  setlistIndex?: number;
+  onPrevSetlistSong?: () => void;
+  onNextSetlistSong?: () => void;
 }
 
 export default function ViewerScreen({
   song,
   onBack,
   onEdit,
+  setlistTotal,
+  setlistIndex,
+  onPrevSetlistSong,
+  onNextSetlistSong,
 }: ViewerScreenProps) {
   const { width, height } = useWindowDimensions();
   const [currentPage, setCurrentPage] = useState(0);
@@ -39,6 +47,12 @@ export default function ViewerScreen({
   const pagerRef = useRef<ScrollView | null>(null);
   const hasMultiplePages = song.pageFiles.length > 1;
   const safePage = Math.min(currentPage, Math.max(0, song.pageFiles.length - 1));
+
+  useEffect(() => {
+    setCurrentPage(0);
+    setZoom(1);
+    pagerRef.current?.scrollTo({ x: 0, animated: false });
+  }, [song.id]);
 
   useEffect(() => {
     const enterImmersive = async () => {
@@ -116,6 +130,28 @@ export default function ViewerScreen({
             <Text numberOfLines={1} style={styles.songTitle}>
               {song.name}
             </Text>
+
+            {setlistTotal !== undefined && setlistIndex !== undefined && setlistTotal > 1 && (
+              <View style={styles.zoomGroup}>
+                <Pressable
+                  disabled={!onPrevSetlistSong}
+                  onPress={onPrevSetlistSong}
+                  style={[styles.smallBtn, !onPrevSetlistSong && { opacity: 0.35 }]}
+                >
+                  <Ionicons name="play-skip-back" size={16} color="#FFFFFF" />
+                </Pressable>
+                <Text style={styles.zoomText}>
+                  เพลง {setlistIndex + 1}/{setlistTotal}
+                </Text>
+                <Pressable
+                  disabled={!onNextSetlistSong}
+                  onPress={onNextSetlistSong}
+                  style={[styles.smallBtn, !onNextSetlistSong && { opacity: 0.35 }]}
+                >
+                  <Ionicons name="play-skip-forward" size={16} color="#FFFFFF" />
+                </Pressable>
+              </View>
+            )}
 
             <View style={styles.zoomGroup}>
               <Pressable

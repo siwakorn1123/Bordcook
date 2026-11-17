@@ -9,6 +9,8 @@ import {
   ChevronRight,
   GripVertical,
   ImagePlus,
+  Library,
+  ListMusic,
   Maximize2,
   Moon,
   MoveHorizontal,
@@ -16,6 +18,8 @@ import {
   Pencil,
   Plus,
   Search,
+  SkipBack,
+  SkipForward,
   Sun,
   Trash2,
   X,
@@ -24,18 +28,23 @@ import {
 } from 'lucide-react';
 import { PWAInstallButton } from './components/PWAInstallButton';
 import {
+  deleteSetlistRecord,
   deleteSongRecord,
+  getAllSetlists,
   getAllSongs,
   PageImage,
   readFileAsDataUrl,
+  saveSetlistRecord,
   saveSongRecord,
+  SetlistRecord,
   SongRecord,
 } from './store/chordStore';
 
+type MainTab = 'library' | 'setlists';
 type Screen =
-  | { type: 'list' }
-  | { type: 'viewer'; songId: number }
-  | { type: 'edit'; songId?: number };
+  | { type: 'tabs' }
+  | { type: 'viewer'; songId: number; setlistIndex?: number }
+  | { type: 'edit'; songId?: number; returnToViewer?: boolean; setlistIndex?: number };
 
 export default function App() {
   const [darkMode, setDarkMode] = useState<boolean>(() =>
@@ -43,28 +52,52 @@ export default function App() {
     window.matchMedia('(prefers-color-scheme: dark)').matches
   );
 
+  const [activeTab, setActiveTab] = useState<MainTab>('library');
   const [songs, setSongs] = useState<SongRecord[]>([]);
+  const [setlists, setSetlists] = useState<SetlistRecord[]>([]);
+  const [activeSetlistId, setActiveSetlistId] = useState<number>(1);
+
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [screen, setScreen] = useState<Screen>({ type: 'list' });
+  const [screen, setScreen] = useState<Screen>({ type: 'tabs' });
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', darkMode);
   }, [darkMode]);
 
-  const loadSongs = async () => {
-    const list = await getAllSongs();
-    setSongs(list);
+  const loadAll = async (preferredSetlistId?: number) => {
+    const [songList, slList] = await Promise.all([
+      getAllSongs(),
+      getAllSetlists(),
+    ]);
+    setSongs(songList);
+    setSetlists(slList);
+    setActiveSetlistId((prev) => {
+      if (preferredSetlistId && slList.some((s) => s.id === preferredSetlistId)) {
+        return preferredSetlistId;
+      }
+      if (slList.some((s) => s.id === prev)) {
+        return prev;
+      }
+      return slList[0]?.id ?? 1;
+    });
     setLoading(false);
   };
 
   useEffect(() => {
-    loadSongs();
+    loadAll();
   }, []);
 
   const filteredSongs = songs.filter((song) =>
     song.name.toLowerCase().includes(searchQuery.trim().toLowerCase())
   );
+
+  const activeSetlist =
+    setlists.find((s) => s.id === activeSetlistId) ?? setlists[0];
+  const songMap = new Map(songs.map((s) => [s.id, s]));
+  const setlistSongs: SongRecord[] = (activeSetlist?.songIds ?? [])
+    .map((id) => songMap.get(id))
+    .filter((s): s is SongRecord => Boolean(s));
 
   const activeViewerSong =
     screen.type === 'viewer'
@@ -77,11 +110,51 @@ export default function App() {
       : undefined;
 
   if (screen.type === 'viewer' && activeViewerSong) {
+    const isSetlistView = screen.setlistIndex !== undefined;
+    const slIdx = screen.setlistIndex ?? 0;
+
     return (
       <ChordViewerScreen
         song={activeViewerSong}
-        onBack={() => setScreen({ type: 'list' })}
-        onEdit={() => setScreen({ type: 'edit', songId: activeViewerSong.id })}
+        onBack={() => setScreen({ type: 'tabs' })}
+        onEdit={() =>
+          setScreen({
+            type: 'edit',
+            songId: activeViewerSong.id,
+            returnToViewer: true,
+            setlistIndex: screen.setlistIndex,
+          })
+        }
+        setlistTotal={isSetlistView ? setlistSongs.length : undefined}
+        setlistIndex={screen.setlistIndex}
+        onPrevSetlistSong={
+          isSetlistView && slIdx > 0
+            ? () => {
+                const prevSong = setlistSongs[slIdx - 1];
+                if (prevSong) {
+                  setScreen({
+                    type: 'viewer',
+                    songId: prevSong.id,
+                    setlistIndex: slIdx - 1,
+                  });
+                }
+              }
+            : undefined
+        }
+        onNextSetlistSong={
+          isSetlistView && slIdx < setlistSongs.length - 1
+            ? () => {
+                const nextSong = setlistSongs[slIdx + 1];
+                if (nextSong) {
+                  setScreen({
+                    type: 'viewer',
+                    songId: nextSong.id,
+                    setlistIndex: slIdx + 1,
+                  });
+                }
+              }
+            : undefined
+        }
       />
     );
   }
@@ -92,11 +165,40 @@ export default function App() {
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
           <button
             type="button"
-            onClick={() => setScreen({ type: 'list' })}
+            onClick={() => setScreen({ type: 'tabs' })}
             className="whitespace-nowrap shrink-0 text-lg font-bold tracking-tight text-slate-900 dark:text-slate-100"
           >
             สมุดคอร์ด
           </button>
+
+          {screen.type === 'tabs' && (
+            <nav className="flex items-center gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800/80">
+              <button
+                type="button"
+                onClick={() => setActiveTab('library')}
+                className={`inline-flex min-h-[38px] items-center gap-1.5 whitespace-nowrap shrink-0 rounded-lg px-3.5 py-1.5 text-sm font-medium transition-colors ${
+                  activeTab === 'library'
+                    ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white'
+                    : 'text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white'
+                }`}
+              >
+                <Library className="h-4 w-4" />
+                <span>คลังเพลง</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('setlists')}
+                className={`inline-flex min-h-[38px] items-center gap-1.5 whitespace-nowrap shrink-0 rounded-lg px-3.5 py-1.5 text-sm font-medium transition-colors ${
+                  activeTab === 'setlists'
+                    ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white'
+                    : 'text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white'
+                }`}
+              >
+                <ListMusic className="h-4 w-4" />
+                <span>ลิสเพลง</span>
+              </button>
+            </nav>
+          )}
 
           <div className="flex items-center gap-2 shrink-0">
             <PWAInstallButton />
@@ -116,23 +218,75 @@ export default function App() {
         <EditSongScreen
           song={activeEditSong}
           onCancel={() => {
-            if (activeEditSong) {
-              setScreen({ type: 'viewer', songId: activeEditSong.id });
+            if (activeEditSong && screen.returnToViewer) {
+              setScreen({
+                type: 'viewer',
+                songId: activeEditSong.id,
+                setlistIndex: screen.setlistIndex,
+              });
             } else {
-              setScreen({ type: 'list' });
+              setScreen({ type: 'tabs' });
             }
           }}
           onSaved={async (savedId) => {
-            await loadSongs();
-            if (activeEditSong) {
-              setScreen({ type: 'viewer', songId: savedId });
+            await loadAll();
+            if (activeEditSong && screen.returnToViewer) {
+              setScreen({
+                type: 'viewer',
+                songId: savedId,
+                setlistIndex: screen.setlistIndex,
+              });
             } else {
-              setScreen({ type: 'list' });
+              setScreen({ type: 'tabs' });
             }
           }}
           onDeleted={async () => {
-            await loadSongs();
-            setScreen({ type: 'list' });
+            await loadAll();
+            setScreen({ type: 'tabs' });
+          }}
+        />
+      ) : activeTab === 'setlists' && activeSetlist ? (
+        <SetlistView
+          allSongs={songs}
+          setlists={setlists}
+          activeSetlist={activeSetlist}
+          setlistSongs={setlistSongs}
+          onSelectSetlist={setActiveSetlistId}
+          onCreateSetlist={async (name) => {
+            const newId = await saveSetlistRecord({ name, songIds: [] });
+            await loadAll(newId);
+          }}
+          onRenameSetlist={async (id, name) => {
+            const target = setlists.find((s) => s.id === id);
+            if (!target) return;
+            await saveSetlistRecord({
+              id,
+              name,
+              songIds: target.songIds,
+            });
+            await loadAll(id);
+          }}
+          onDeleteSetlist={async (id) => {
+            await deleteSetlistRecord(id);
+            await loadAll();
+          }}
+          onUpdateSongIds={async (songIds) => {
+            await saveSetlistRecord({
+              id: activeSetlist.id,
+              name: activeSetlist.name,
+              songIds,
+            });
+            await loadAll(activeSetlist.id);
+          }}
+          onOpenSong={(index) => {
+            const song = setlistSongs[index];
+            if (song) {
+              setScreen({
+                type: 'viewer',
+                songId: song.id,
+                setlistIndex: index,
+              });
+            }
           }}
         />
       ) : (
@@ -244,14 +398,456 @@ export default function App() {
   );
 }
 
+function SetlistView({
+  allSongs,
+  setlists,
+  activeSetlist,
+  setlistSongs,
+  onSelectSetlist,
+  onCreateSetlist,
+  onRenameSetlist,
+  onDeleteSetlist,
+  onUpdateSongIds,
+  onOpenSong,
+}: {
+  allSongs: SongRecord[];
+  setlists: SetlistRecord[];
+  activeSetlist: SetlistRecord;
+  setlistSongs: SongRecord[];
+  onSelectSetlist: (id: number) => void;
+  onCreateSetlist: (name: string) => Promise<void>;
+  onRenameSetlist: (id: number, name: string) => Promise<void>;
+  onDeleteSetlist: (id: number) => Promise<void>;
+  onUpdateSongIds: (songIds: number[]) => Promise<void>;
+  onOpenSong: (index: number) => void;
+}) {
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerSearch, setPickerSearch] = useState('');
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+
+  const [nameModalMode, setNameModalMode] = useState<'create' | 'rename' | null>(
+    null
+  );
+  const [setlistNameInput, setSetlistNameInput] = useState('');
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+
+  const listRef = useRef<HTMLDivElement | null>(null);
+  const touchDragRef = useRef<{ index: number } | null>(null);
+
+  const existingSet = new Set(activeSetlist.songIds);
+
+  const moveSong = async (from: number, to: number) => {
+    if (to < 0 || to >= setlistSongs.length || from === to) return;
+    const ids = setlistSongs.map((s) => s.id);
+    const [moved] = ids.splice(from, 1);
+    ids.splice(to, 0, moved);
+    await onUpdateSongIds(ids);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!touchDragRef.current || !listRef.current) return;
+    const touchY = e.touches[0].clientY;
+    const rowElements = Array.from(listRef.current.children) as HTMLElement[];
+    for (let i = 0; i < rowElements.length; i++) {
+      const rect = rowElements[i].getBoundingClientRect();
+      if (touchY >= rect.top && touchY <= rect.bottom) {
+        if (i !== touchDragRef.current.index) {
+          const from = touchDragRef.current.index;
+          touchDragRef.current.index = i;
+          setDragIndex(i);
+          moveSong(from, i);
+        }
+        break;
+      }
+    }
+  };
+
+  const pickerFiltered = allSongs.filter((s) =>
+    s.name.toLowerCase().includes(pickerSearch.trim().toLowerCase())
+  );
+
+  return (
+    <main className="mx-auto max-w-4xl px-4 pb-16 pt-5 sm:px-6">
+      {/* แถบเลือกลิส + จัดการลิส */}
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          {setlists.map((sl) => {
+            const active = sl.id === activeSetlist.id;
+            return (
+              <button
+                key={sl.id}
+                type="button"
+                onClick={() => onSelectSetlist(sl.id)}
+                className={`min-h-[40px] whitespace-nowrap rounded-xl border px-4 py-2 text-sm font-semibold transition-colors ${
+                  active
+                    ? 'border-[#1D5D9B] bg-[#1D5D9B] text-white dark:border-sky-400 dark:bg-sky-500 dark:text-slate-950'
+                    : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-800 dark:bg-[#171B22] dark:text-slate-200'
+                }`}
+              >
+                {sl.name}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setSetlistNameInput(activeSetlist.name);
+              setNameModalMode('rename');
+            }}
+            aria-label="เปลี่ยนชื่อลิส"
+            className="inline-flex min-h-[40px] min-w-[40px] items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-800 dark:bg-[#171B22] dark:text-slate-200"
+          >
+            <Pencil className="h-4 w-4" />
+          </button>
+          {setlists.length > 1 && (
+            <button
+              type="button"
+              onClick={() => onDeleteSetlist(activeSetlist.id)}
+              aria-label="ลบลิสเพลง"
+              className="inline-flex min-h-[40px] min-w-[40px] items-center justify-center rounded-xl border border-red-200 bg-red-50 text-red-600 hover:bg-red-100 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-400"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              setSetlistNameInput('');
+              setNameModalMode('create');
+            }}
+            className="inline-flex min-h-[40px] items-center gap-1.5 whitespace-nowrap rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 dark:border-slate-800 dark:bg-[#171B22] dark:text-slate-100"
+          >
+            <Plus className="h-4 w-4" />
+            <span>ลิสใหม่</span>
+          </button>
+        </div>
+      </div>
+
+      {/* ปุ่มเพิ่มเพลงที่อัพคอร์ดแล้วเข้าลิส */}
+      <div className="mb-5 flex items-center justify-between gap-3">
+        <button
+          type="button"
+          onClick={() => {
+            setPickerSearch('');
+            setSelectedIds([]);
+            setPickerOpen(true);
+          }}
+          className="inline-flex min-h-[48px] flex-1 items-center justify-center gap-2 rounded-2xl border border-dashed border-[#1D5D9B] bg-white px-4 py-3 text-sm font-semibold text-[#1D5D9B] transition-colors hover:bg-[#1D5D9B]/5 dark:border-sky-400 dark:bg-[#171B22] dark:text-sky-400"
+        >
+          <Plus className="h-5 w-5" />
+          <span>เพิ่มเพลงที่อัพคอร์ดแล้วเข้าลิส</span>
+        </button>
+        <span className="whitespace-nowrap text-sm font-semibold tabular-nums text-slate-500 dark:text-slate-400">
+          {setlistSongs.length} เพลง
+        </span>
+      </div>
+
+      {setlistSongs.length === 0 ? (
+        <div className="flex min-h-[45vh] flex-col items-center justify-center rounded-2xl border border-slate-200 bg-white p-10 text-center dark:border-slate-800 dark:bg-[#171B22]">
+          <ListMusic className="mb-3 h-12 w-12 text-[#1D5D9B] dark:text-sky-400" />
+          <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">
+            ยังไม่มีเพลงในลิสนี้
+          </h2>
+          <p className="mt-1.5 max-w-md text-sm text-slate-500 dark:text-slate-400">
+            กดปุ่ม &quot;เพิ่มเพลงที่อัพคอร์ดแล้วเข้าลิส&quot; ด้านบน แล้วลากจัดลำดับเพลงก่อนหลังได้เลย
+          </p>
+        </div>
+      ) : (
+        <div ref={listRef} className="space-y-2.5">
+          {setlistSongs.map((song, index) => {
+            const firstPage = song.pages[0];
+            return (
+              <div
+                key={song.id}
+                draggable
+                onDragStart={() => setDragIndex(index)}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={() => {
+                  if (dragIndex !== null && dragIndex !== index) {
+                    moveSong(dragIndex, index);
+                  }
+                  setDragIndex(null);
+                }}
+                onDragEnd={() => setDragIndex(null)}
+                className={`flex items-center gap-3 rounded-2xl border bg-white p-3 transition-shadow dark:bg-[#171B22] ${
+                  dragIndex === index
+                    ? 'border-[#1D5D9B] opacity-70 shadow-lg dark:border-sky-400'
+                    : 'border-slate-200 dark:border-slate-800'
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() => onOpenSong(index)}
+                  className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                >
+                  <span className="w-6 shrink-0 text-center text-base font-bold tabular-nums text-[#1D5D9B] dark:text-sky-400">
+                    {index + 1}
+                  </span>
+                  <div className="h-16 w-12 shrink-0 overflow-hidden rounded-xl bg-slate-100 dark:bg-slate-900">
+                    {firstPage ? (
+                      <img
+                        src={firstPage.dataUrl}
+                        alt={song.name}
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <div className="flex h-full items-center justify-center text-slate-400">
+                        <Music className="h-5 w-5" />
+                      </div>
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-base font-bold text-slate-900 dark:text-slate-100">
+                      {song.name}
+                    </div>
+                    <div className="text-xs tabular-nums text-slate-500 dark:text-slate-400">
+                      {song.pages.length} หน้า
+                    </div>
+                  </div>
+                </button>
+
+                <div className="flex shrink-0 items-center gap-1">
+                  <button
+                    type="button"
+                    disabled={index === 0}
+                    onClick={() => moveSong(index, index - 1)}
+                    aria-label="เลื่อนขึ้น"
+                    className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 disabled:opacity-30 dark:hover:bg-slate-800"
+                  >
+                    <ArrowUp className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    disabled={index === setlistSongs.length - 1}
+                    onClick={() => moveSong(index, index + 1)}
+                    aria-label="เลื่อนลง"
+                    className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 disabled:opacity-30 dark:hover:bg-slate-800"
+                  >
+                    <ArrowDown className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onUpdateSongIds(
+                        activeSetlist.songIds.filter((id) => id !== song.id)
+                      )
+                    }
+                    aria-label="นำออกจากลิส"
+                    className="flex h-10 w-10 items-center justify-center rounded-lg text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                  <div
+                    onTouchStart={() => {
+                      touchDragRef.current = { index };
+                      setDragIndex(index);
+                    }}
+                    onTouchMove={handleTouchMove}
+                    onTouchEnd={() => {
+                      touchDragRef.current = null;
+                      setDragIndex(null);
+                    }}
+                    title="ลากเพื่อจัดลำดับ"
+                    className="flex h-11 w-9 touch-none cursor-grab items-center justify-center text-slate-400"
+                  >
+                    <GripVertical className="h-5 w-5" />
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Modal เลือกเพลงเข้าลิส */}
+      {pickerOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+          <div className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-[#171B22]">
+            <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+              <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">
+                เลือกเพลงที่อัพคอร์ดแล้วเข้าลิส
+              </h2>
+              <button
+                type="button"
+                onClick={() => setPickerOpen(false)}
+                className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="border-b border-slate-200 p-4 dark:border-slate-800">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={pickerSearch}
+                  onChange={(e) => setPickerSearch(e.target.value)}
+                  placeholder="ค้นหาเพลงในคลัง..."
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-4 text-sm text-slate-900 outline-none focus:border-[#1D5D9B] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                />
+              </div>
+            </div>
+
+            <div className="flex-1 space-y-2 overflow-y-auto p-4">
+              {allSongs.length === 0 ? (
+                <div className="py-12 text-center text-sm text-slate-500 dark:text-slate-400">
+                  ยังไม่มีเพลงที่อัพคอร์ดไว้ กรุณาเพิ่มเพลงในแท็บ &quot;คลังเพลง&quot; ก่อน
+                </div>
+              ) : (
+                pickerFiltered.map((song) => {
+                  const alreadyIn = existingSet.has(song.id);
+                  const checked = selectedIds.includes(song.id);
+                  const firstPage = song.pages[0];
+
+                  return (
+                    <button
+                      key={song.id}
+                      type="button"
+                      disabled={alreadyIn}
+                      onClick={() =>
+                        setSelectedIds((prev) =>
+                          prev.includes(song.id)
+                            ? prev.filter((id) => id !== song.id)
+                            : [...prev, song.id]
+                        )
+                      }
+                      className={`flex w-full items-center gap-3 rounded-xl border p-2.5 text-left transition-colors ${
+                        alreadyIn
+                          ? 'cursor-not-allowed border-slate-200 opacity-50 dark:border-slate-800'
+                          : checked
+                          ? 'border-[#1D5D9B] bg-[#1D5D9B]/5 dark:border-sky-400 dark:bg-sky-400/10'
+                          : 'border-slate-200 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/50'
+                      }`}
+                    >
+                      <div className="h-14 w-11 shrink-0 overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-900">
+                        {firstPage ? (
+                          <img
+                            src={firstPage.dataUrl}
+                            alt={song.name}
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          <div className="flex h-full items-center justify-center text-slate-400">
+                            <Music className="h-4 w-4" />
+                          </div>
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-sm font-bold text-slate-900 dark:text-slate-100">
+                          {song.name}
+                        </div>
+                        <div className="text-xs text-slate-500 dark:text-slate-400">
+                          {alreadyIn
+                            ? `อยู่ในลิสแล้ว · ${song.pages.length} หน้า`
+                            : `${song.pages.length} หน้า`}
+                        </div>
+                      </div>
+                      <div
+                        className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md border ${
+                          alreadyIn || checked
+                            ? 'border-[#1D5D9B] bg-[#1D5D9B] text-white dark:border-sky-400 dark:bg-sky-400 dark:text-slate-950'
+                            : 'border-slate-300 dark:border-slate-600'
+                        }`}
+                      >
+                        {(alreadyIn || checked) && <Check className="h-4 w-4" />}
+                      </div>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+
+            <div className="flex justify-end gap-2 border-t border-slate-200 px-5 py-3.5 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => setPickerOpen(false)}
+                className="min-h-[42px] rounded-xl px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                disabled={selectedIds.length === 0}
+                onClick={async () => {
+                  await onUpdateSongIds([...activeSetlist.songIds, ...selectedIds]);
+                  setPickerOpen(false);
+                }}
+                className="min-h-[42px] rounded-xl bg-[#1D5D9B] px-5 py-2 text-sm font-semibold text-white hover:bg-[#174b7e] disabled:opacity-40"
+              >
+                เพิ่มเข้าลิส ({selectedIds.length})
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal สร้าง/เปลี่ยนชื่อลิส */}
+      {nameModalMode && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-[#171B22]">
+            <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">
+              {nameModalMode === 'create' ? 'สร้างลิสเพลงใหม่' : 'เปลี่ยนชื่อลิสเพลง'}
+            </h2>
+            <input
+              type="text"
+              value={setlistNameInput}
+              onChange={(e) => setSetlistNameInput(e.target.value)}
+              placeholder="เช่น เซ็ตงานคืนนี้, ซ้อมวง"
+              autoFocus
+              className="mt-4 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-base text-slate-900 outline-none focus:border-[#1D5D9B] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+            />
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setNameModalMode(null)}
+                className="min-h-[42px] rounded-xl px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  const clean = setlistNameInput.trim();
+                  if (!clean) return;
+                  if (nameModalMode === 'create') {
+                    await onCreateSetlist(clean);
+                  } else {
+                    await onRenameSetlist(activeSetlist.id, clean);
+                  }
+                  setNameModalMode(null);
+                }}
+                className="min-h-[42px] rounded-xl bg-[#1D5D9B] px-5 py-2 text-sm font-semibold text-white hover:bg-[#174b7e]"
+              >
+                บันทึก
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </main>
+  );
+}
+
 function ChordViewerScreen({
   song,
   onBack,
   onEdit,
+  setlistTotal,
+  setlistIndex,
+  onPrevSetlistSong,
+  onNextSetlistSong,
 }: {
   song: SongRecord;
   onBack: () => void;
   onEdit: () => void;
+  setlistTotal?: number;
+  setlistIndex?: number;
+  onPrevSetlistSong?: () => void;
+  onNextSetlistSong?: () => void;
 }) {
   const [pageIndex, setPageIndex] = useState(0);
   const [showTopBar, setShowTopBar] = useState(true);
@@ -260,6 +856,11 @@ function ChordViewerScreen({
 
   const touchStartX = useRef<number | null>(null);
   const touchStartY = useRef<number | null>(null);
+
+  useEffect(() => {
+    setPageIndex(0);
+    setZoom(1);
+  }, [song.id]);
 
   const safeIndex = Math.min(pageIndex, Math.max(0, song.pages.length - 1));
   const currentPage = song.pages[safeIndex];
@@ -300,7 +901,6 @@ function ChordViewerScreen({
 
   return (
     <div className="relative flex h-screen w-screen flex-col overflow-hidden bg-black text-white select-none">
-      {/* แถบด้านบน: วางเป็น flex row เหนือพื้นที่แสดงรูปเพื่อไม่ให้บังส่วนบนของรูป */}
       {showTopBar && (
         <header className="shrink-0 border-b border-white/10 bg-black/95 px-2 py-2 sm:px-4">
           <div className="flex items-center gap-1.5 sm:gap-2">
@@ -315,6 +915,34 @@ function ChordViewerScreen({
             <h1 className="min-w-0 flex-1 truncate text-base font-semibold sm:text-lg">
               {song.name}
             </h1>
+
+            {setlistTotal !== undefined &&
+              setlistIndex !== undefined &&
+              setlistTotal > 1 && (
+                <div className="flex shrink-0 items-center gap-1 rounded-xl bg-white/10 px-1.5 py-1">
+                  <button
+                    type="button"
+                    disabled={!onPrevSetlistSong}
+                    onClick={onPrevSetlistSong}
+                    aria-label="เพลงก่อนหน้าในลิส"
+                    className="flex h-8 w-8 items-center justify-center rounded-lg text-white hover:bg-white/10 disabled:opacity-30"
+                  >
+                    <SkipBack className="h-4 w-4" />
+                  </button>
+                  <span className="px-1 text-xs font-semibold tabular-nums text-white/90">
+                    เพลง {setlistIndex + 1}/{setlistTotal}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={!onNextSetlistSong}
+                    onClick={onNextSetlistSong}
+                    aria-label="เพลงถัดไปในลิส"
+                    className="flex h-8 w-8 items-center justify-center rounded-lg text-white hover:bg-white/10 disabled:opacity-30"
+                  >
+                    <SkipForward className="h-4 w-4" />
+                  </button>
+                </div>
+              )}
 
             <div className="flex shrink-0 items-center gap-0.5">
               <button
@@ -366,9 +994,7 @@ function ChordViewerScreen({
         </header>
       )}
 
-      {/* พื้นที่แสดงรูปคอร์ด */}
       <div className="relative flex min-h-0 flex-1 flex-col">
-        {/* ปุ่มกลับวงกลมมุมซ้ายบนเมื่อแถบบนถูกซ่อน */}
         {!showTopBar && (
           <button
             type="button"
@@ -380,7 +1006,6 @@ function ChordViewerScreen({
           </button>
         )}
 
-        {/* แตะ 1 ครั้งเพื่อซ่อน/แสดงแถบด้านบน */}
         <div
           onClick={() => setShowTopBar((prev) => !prev)}
           onTouchStart={handleTouchStart}
@@ -420,7 +1045,6 @@ function ChordViewerScreen({
           )}
         </div>
 
-        {/* แถบนำทางด้านล่าง แสดงตลอดเวลาเมื่อมีหลายหน้า */}
         {hasMultiplePages && (
           <div className="pointer-events-none absolute inset-x-0 bottom-4 z-20 flex justify-center px-4">
             <div className="pointer-events-auto flex items-center gap-2 rounded-full border border-white/15 bg-black/75 px-2.5 py-1.5 backdrop-blur-md">
