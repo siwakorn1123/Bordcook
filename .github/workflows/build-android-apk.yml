@@ -34,14 +34,20 @@ jobs:
             yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
           fi
 
-      - name: Install dependencies
-        run: npm install
+      - name: Install dependencies and align Expo SDK versions
+        env:
+          CI: 'true'
+        run: |
+          npm install
+          npx expo install --fix
 
       - name: Generate Android project
-        run: npx expo prebuild --platform android --no-install
+        run: npx expo prebuild --platform android --clean --no-install
 
       - name: Build release APK
         working-directory: expo-app/android
+        env:
+          GRADLE_OPTS: -Xmx3g -XX:MaxMetaspaceSize=1g
         run: chmod +x gradlew && ./gradlew assembleRelease --no-daemon
 
       - name: Upload APK artifact
