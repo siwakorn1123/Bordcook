@@ -2,15 +2,20 @@
   "expo": {
     "name": "สมุดคอร์ด",
     "slug": "chord-book",
+    "owner": "mooping06",
     "version": "1.0.0",
     "orientation": "default",
+    "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
       "backgroundColor": "#101318"
     },
     "android": {
       "package": "com.chordbook.tablet",
       "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#1D5D9B"
       },
       "permissions": [
